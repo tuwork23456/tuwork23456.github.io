@@ -1,0 +1,7 @@
+FROM winlogbeat-* METADATA _id, _index, _version
+| WHERE winlog.channel == "Microsoft-Windows-Sysmon/Operational"
+| WHERE event.code == "1"
+| WHERE TO_LOWER(winlog.event_data.CommandLine) LIKE "*soc_alert_test_001*"
+| KEEP _id, _index, _version, @timestamp, agent.hostname, event.code,
+       winlog.event_data.Image, winlog.event_data.CommandLine
+| LIMIT 100

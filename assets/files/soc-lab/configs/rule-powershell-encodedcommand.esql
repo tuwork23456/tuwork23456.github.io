@@ -1,0 +1,14 @@
+FROM winlogbeat-* METADATA _id
+| WHERE winlog.channel == "Microsoft-Windows-Sysmon/Operational"
+  AND event.code == "1"
+| EVAL ps_image = TO_LOWER(winlog.event_data.Image),
+       ps_cmd = TO_LOWER(winlog.event_data.CommandLine)
+| WHERE ps_image LIKE "*powershell.exe"
+  AND (
+    ps_cmd LIKE "*-encodedcommand*"
+    OR ps_cmd LIKE "* -enc *"
+  )
+| KEEP _id, @timestamp, agent.hostname, event.code,
+       winlog.event_data.Image,
+       winlog.event_data.CommandLine
+| LIMIT 100
