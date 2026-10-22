@@ -24,22 +24,8 @@ mermaid: true
 
 Khi dữ liệu cần mã hóa lớn hơn 16 byte, ứng dụng bắt buộc phải quyết định cách xử lý nhiều khối liên tiếp; đó chính là vai trò của **Mode of Operation (chế độ hoạt động)**.
 
-```mermaid
-flowchart TD
-    subgraph ALGO["Thuật Toán Mã Hóa Khối (Block Cipher)"]
-        AES["AES Core Engine (128-bit Block)"]
-    end
-
-    subgraph MODES["Chế Độ Hoạt Động (Modes of Operation)"]
-        direction TB
-        M1["CBC: Chuỗi khối liên kết qua IV"]
-        M2["CTR: Khối đếm Keystream, biến thành Stream Cipher"]
-        M3["XTS: Tweak theo Sector cho lưu trữ ổ đĩa"]
-        M4["GCM: Mã hóa + Xác thực tính toàn vẹn (AEAD)"]
-    end
-
-    ALGO --> MODES
-```
+![4 chế độ hoạt động của AES](/assets/images/posts/aes-modes/00-so-do-4-che-do-aes.png)
+_Hình 1 — Mối quan hệ giữa thuật toán mã hóa khối AES 128-bit và 4 chế độ hoạt động (CBC, CTR, XTS, GCM)._
 
 Hiểu đơn giản:
 - **AES** là phép biến đổi toán học cho một khối dữ liệu 16 byte.
@@ -70,7 +56,7 @@ Khi dùng **ECB (Electronic Codebook)**, mỗi khối 16 byte được mã hóa 
 Nhờ cơ chế móc xích liên hoàn này, hai khối dữ liệu giống nhau nằm ở hai vị trí khác nhau sẽ cho ra hai khối bản mã hoàn toàn khác nhau, xóa sạch hoàn toàn mọi mẫu hình lặp lại.
 
 ![So sánh kết quả mã hóa ảnh BMP giữa CBC và ECB](/assets/images/posts/aes-modes/01-bmp-cbc-vs-ecb.png)
-_Hình 1 — Cùng một ảnh BMP: CBC (trái) che giấu cấu trúc tốt hơn hẳn so với ECB (phải)._
+_Hình 2 — Cùng một ảnh BMP: CBC (trái) che giấu cấu trúc tốt hơn hẳn so với ECB (phải)._
 
 ### 2.3. Điểm cần lưu ý về CBC
 - **Padding:** Vì là mã hóa khối, CBC bắt buộc độ dài dữ liệu phải là bội số của 16 byte. Do đó, nếu dữ liệu thiếu hụt thì phải đệm thêm padding (phổ biến nhất là chuẩn **PKCS#7**).
@@ -103,7 +89,7 @@ Trong thử nghiệm với 7 dòng log có tổng dung lượng gốc là **153 
 - Chi phí lưu trữ của CBC lớn hơn tới **35,9%** so với dữ liệu gốc!
 
 ![So sánh dung lượng ciphertext giữa CTR và CBC trên log cảm biến IoT](/assets/images/posts/aes-modes/02-iot-log-ctr-vs-cbc.png)
-_Hình 2 — Bảy dòng log IoT: CTR giữ nguyên 153 byte ciphertext, trong khi CBC tạo ra 208 byte khi padding riêng từng bản ghi._
+_Hình 3 — Bảy dòng log IoT: CTR giữ nguyên 153 byte ciphertext, trong khi CBC tạo ra 208 byte khi padding riêng từng bản ghi._
 
 > [!WARNING]
 > **Ràng buộc sinh tử của CTR:** Tuyệt đối không bao giờ được tái sử dụng cùng một cặp **(Key, Nonce/Counter)** cho hai thông điệp khác nhau. Nếu tái sử dụng, kẻ tấn công có thể XOR hai bản mã để loại bỏ keystream, từ đó suy đoán trực tiếp ra quan hệ giữa các bản rõ:
@@ -125,7 +111,7 @@ Một ổ đĩa trắng hoặc mới khởi tạo thường chứa rất nhiều
 - Nhờ có Tweak phụ thuộc vị trí, hai sector có nội dung hoàn toàn giống nhau (kể cả sector toàn số 0) khi nằm ở hai vị trí khác nhau trên ổ đĩa sẽ tạo ra hai bản mã hoàn toàn khác biệt.
 
 ![Kết quả mã hóa sector 512 byte giữa ECB và XTS](/assets/images/posts/aes-modes/03-sector-ecb-vs-xts.png)
-_Hình 3 — Kết quả mã hóa sector 512 byte: ECB lộ các khối lặp, còn XTS tạo ra bản mã ngẫu nhiên thay đổi theo vị trí sector._
+_Hình 4 — Kết quả mã hóa sector 512 byte: ECB lộ các khối lặp, còn XTS tạo ra bản mã ngẫu nhiên thay đổi theo vị trí sector._
 
 ### 4.2. Khả năng truy cập ngẫu nhiên (Random Access)
 
@@ -166,7 +152,7 @@ Do CTR chỉ đơn thuần XOR với Keystream mà không có cơ chế xác th�
 3. Khi bên nhận giải mã, hệ thống tính toán lại Tag. Nếu dữ liệu bị thay đổi dù chỉ 1 bit, Tag sẽ không khớp và hàm giải mã lập tức ném ra ngoại lệ, **từ chối hoàn toàn dữ liệu**.
 
 ![Thử nghiệm sửa trường role: CTR bị giải mã sai thành root, GCM phát hiện tag không khớp](/assets/images/posts/aes-modes/04-json-tamper-ctr-vs-gcm.png)
-_Hình 4 — Thử nghiệm sửa trường role: CTR giải mã ra root, còn GCM phát hiện Tag không hợp lệ và lập tức từ chối bản tin._
+_Hình 5 — Thử nghiệm sửa trường role: CTR giải mã ra root, còn GCM phát hiện Tag không hợp lệ và lập tức từ chối bản tin._
 
 > [!IMPORTANT]
 > **Điểm cần chú ý khi triển khai GCM:**
