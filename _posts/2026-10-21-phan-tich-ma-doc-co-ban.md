@@ -160,19 +160,8 @@ _Hình 10 — Hàm WRK() quét mã phím qua GetAsyncKeyState và định dạng
   `[dd/MM/yyyy HH:mm:ss Title]`  
   rồi nối toàn bộ phím gõ phía sau vào chuỗi đệm **`Logs`**.
 
-```mermaid
-flowchart TD
-    A[Bắt đầu vòng lặp WRK] --> B[Gọi GetAsyncKeyState mã 0..255]
-    B --> C{Có phím được nhấn?}
-    C -- Không --> B
-    C -- Có --> D[Gọi AV lấy Active Window Title]
-    D --> E{Cửa sổ có đổi so với lần trước?}
-    E -- Có --> F["Ghi header: [Thời gian - Tên Cửa Sổ]"]
-    E -- Không --> G[Dịch mã phím sang ký tự]
-    F --> G
-    G --> H[Nối chuỗi vào biến bộ đệm Logs]
-    H --> B
-```
+![Sơ đồ luồng hoạt động của hàm ghi phím WRK](/assets/images/posts/malware/flowchart-keylogger-wrk.png)
+_Hình 11 — Sơ đồ luồng xử lý chi tiết của hàm quét phím WRK() và hàm lấy thông tin cửa sổ AV()._
 
 Nhờ gắn kèm tiêu đề cửa sổ, kẻ tấn công dễ dàng phân loại được đâu là tài khoản nhập trên trình duyệt web, đâu là tin nhắn chat hay câu lệnh trong terminal.
 
@@ -181,7 +170,7 @@ Nhờ gắn kèm tiêu đề cửa sổ, kẻ tấn công dễ dàng phân loạ
 Tiếp tục rà soát các hàm đồ họa trong mã nguồn, mình phát hiện cơ chế chụp màn hình trong lớp điều khiển:
 
 ![Các đoạn mã xử lý ảnh chụp màn hình và so sánh MD5](/assets/images/posts/malware/chup-man-hinh.png)
-_Hình 11 — Logic chụp màn hình bằng CopyFromScreen, nén JPEG và tối ưu bằng băm MD5._
+_Hình 12 — Logic chụp màn hình bằng CopyFromScreen, nén JPEG và tối ưu bằng băm MD5._
 
 Đoạn mã chụp màn hình sử dụng các lớp chuẩn của .NET Framework:
 - Tạo một đối tượng `Bitmap` với kích thước tương ứng độ phân giải màn hình (`Screen.PrimaryScreen.Bounds`).
@@ -208,7 +197,7 @@ Nếu màn hình tĩnh (người dùng không thao tác gì), mã độc sẽ b�
 Các chuỗi `172.20.0.20` và `1177` được tham chiếu trực tiếp tại nhánh khởi tạo kết nối mạng:
 
 ![Nhánh kết nối sử dụng TcpClient cùng các biến OK.H và OK.P](/assets/images/posts/malware/ket-noi-c2.png)
-_Hình 12 — Nhánh kết nối socket sử dụng TcpClient cùng cấu hình OK.H và OK.P._
+_Hình 13 — Nhánh kết nối socket sử dụng TcpClient cùng cấu hình OK.H và OK.P._
 
 Hàm mạng khởi tạo một đối tượng `System.Net.Sockets.TcpClient` và gọi phương thức kết nối:
 ```visualbasic
@@ -224,7 +213,7 @@ Sau khi kết nối TCP thành công, mã độc gửi gói tin "bắt tay" (han
 Bên cạnh việc truyền dữ liệu đánh cắp về server, njRAT còn có một bộ lắng nghe và thực thi lệnh từ xa. Trong đó nhánh tải và chạy file thứ cấp thể hiện rõ năng lực mở rộng:
 
 ![Chuỗi thao tác tải dữ liệu, ghi file tạm và khởi chạy](/assets/images/posts/malware/tai-va-chay-file.png)
-_Hình 13 — Nhánh xử lý lệnh tải payload từ URL, lưu file tạm và khởi chạy qua Process.Start._
+_Hình 14 — Nhánh xử lý lệnh tải payload từ URL, lưu file tạm và khởi chạy qua Process.Start._
 
 Khi nhận được lệnh tương ứng từ C2, mã độc thực thi chuỗi hành động sau:
 1. Dùng `WebClient.DownloadData(url)` để tải tệp thực thi từ đường link do kẻ tấn công chỉ định.
