@@ -1,5 +1,8 @@
 ---
 title: "Cùng Là AES, Vì Sao Lại Chọn CBC, CTR, XTS Hay GCM?"
+permalink: /posts/aes-encryption-modes/
+redirect_from:
+  - /posts/bon-che-do-aes-cbc-ctr-xts-gcm/
 date: 2026-10-23 00:30:00 +0700
 categories: [Cryptography, Applied Security]
 tags: [cryptography, aes, encryption, cbc, ctr, xts, gcm, security]

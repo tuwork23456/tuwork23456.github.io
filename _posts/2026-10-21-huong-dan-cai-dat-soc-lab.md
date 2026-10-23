@@ -1,5 +1,8 @@
 ---
 title: "Dựng SOC Home Lab và Lần Theo Một Cảnh Báo SSH"
+permalink: /posts/soc-home-lab-ssh-investigation/
+redirect_from:
+  - /posts/huong-dan-cai-dat-soc-lab/
 date: 2026-10-22 22:00:00 +0700
 categories: [Security Operations, SOC Lab]
 tags: [soc, elk-stack, elasticsearch, kibana, logstash, sysmon, winlogbeat, ssh-bruteforce, detection-rules, alert-triage]

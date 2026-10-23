@@ -1,5 +1,8 @@
 ---
 title: "Vạch Trần njRAT 0.7d Qua Từng Dấu Vết Trong Mã Nguồn"
+permalink: /posts/njrat-static-analysis/
+redirect_from:
+  - /posts/phan-tich-ma-doc-co-ban/
 date: 2026-10-21 21:00:00 +0700
 categories: [Malware Analysis, Reverse Engineering]
 tags: [malware, njrat, reverse-engineering, static-analysis, pestudio, detect-it-easy, dnspy, dotnet]
